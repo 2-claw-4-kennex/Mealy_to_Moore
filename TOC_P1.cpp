@@ -26,12 +26,18 @@ map<string, map<string, string>> moore_transitions;
 map<string, string> moore_outputs;
 queue<string> bfs_queue;
 set<string> visited;
+map<string, int> state_layer;
 
 // UI State Variables
 vector<MealyTableRow> ui_table_rows;
 char ui_initial_state[32] = "q0";
 bool algorithm_started = false;
-bool trigger_polygon_layout = false;
+bool trigger_auto_layout = false;
+
+// String Tester Variables
+char ui_test_string[128] = "";
+string simulation_result = "";
+string simulation_path = "";
 
 void processNextStep() {
     if (bfs_queue.empty()) return;
@@ -39,15 +45,12 @@ void processNextStep() {
     string current_moore = bfs_queue.front();
     bfs_queue.pop();
 
-    // Extract the original state by removing the last character (the output symbol)
     string current_mealy = current_moore.substr(0, current_moore.length() - 1);
 
     for (string symbol : alphabet) {
         if (mealy[current_mealy].count(symbol) == 0) continue;
 
         MealyTransition trans = mealy[current_mealy][symbol];
-
-        // Concatenate without the underscore (e.g., "q1" + "0" = "q10")
         string next_moore = trans.next_state + trans.output;
 
         moore_transitions[current_moore][symbol] = next_moore;
@@ -55,6 +58,7 @@ void processNextStep() {
         if (visited.find(next_moore) == visited.end()) {
             visited.insert(next_moore);
             moore_outputs[next_moore] = trans.output;
+            state_layer[next_moore] = state_layer[current_moore] + 1;
             bfs_queue.push(next_moore);
         }
     }
@@ -66,9 +70,7 @@ int main() {
     GLFWwindow* window = glfwCreateWindow(1280, 720, "Mealy to Moore Simulator", NULL, NULL);
     if (!window) { glfwTerminate(); return -1; }
 
-    // Force Fullscreen / Maximized Window
     glfwMaximizeWindow(window);
-
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1);
 
@@ -118,9 +120,7 @@ int main() {
 
         ImGui::Text("Mealy Transition Table");
 
-        if (algorithm_started) {
-            ImGui::BeginDisabled();
-        }
+        if (algorithm_started) ImGui::BeginDisabled();
 
         if (ImGui::BeginTable("MealyInput", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
             ImGui::TableSetupColumn("State");
@@ -166,9 +166,7 @@ int main() {
         ImGui::Text("Initial State:"); ImGui::SameLine();
         ImGui::InputText("##init_state", ui_initial_state, IM_ARRAYSIZE(ui_initial_state));
 
-        if (algorithm_started) {
-            ImGui::EndDisabled();
-        }
+        if (algorithm_started) ImGui::EndDisabled();
 
         if (!algorithm_started) {
             if (ImGui::Button("Lock Input & Start Conversion")) {
@@ -179,37 +177,69 @@ int main() {
                         mealy[row.state]["b"] = {row.next_b, row.out_b};
                     }
                 }
-                // Initialize start state with a dash directly connected (e.g., "q0-")
                 string init_moore = string(ui_initial_state) + "-";
                 bfs_queue.push(init_moore);
                 visited.insert(init_moore);
                 moore_outputs[init_moore] = "-";
+                state_layer[init_moore] = 0;
                 algorithm_started = true;
             }
         } else {
             if (ImGui::Button("Execute Next Step")) {
                 processNextStep();
-                trigger_polygon_layout = true; // Auto-align dynamically as new nodes spawn
+                trigger_auto_layout = true;
             }
             ImGui::SameLine();
             if (ImGui::Button("Reset Simulator")) {
                 mealy.clear(); moore_transitions.clear();
-                moore_outputs.clear(); visited.clear();
+                moore_outputs.clear(); visited.clear(); state_layer.clear();
                 while(!bfs_queue.empty()) bfs_queue.pop();
+                simulation_result = ""; simulation_path = ""; ui_test_string[0] = '\0';
                 algorithm_started = false;
             }
 
-            ImGui::Separator();
-            ImGui::Text("Pending states in BFS Queue (%d):", (int)bfs_queue.size());
-
-            if (bfs_queue.empty()) {
-                ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "Queue is empty. Conversion complete.");
-            } else {
+            ImGui::Text("Pending states in BFS Queue (%d)", (int)bfs_queue.size());
+            if (!bfs_queue.empty()) {
                 queue<string> temp_q = bfs_queue;
                 while (!temp_q.empty()) {
                     ImGui::BulletText("%s", temp_q.front().c_str());
                     temp_q.pop();
                 }
+            }
+
+            // --- String Tester UI ---
+            ImGui::Separator();
+            ImGui::Text("Moore Machine String Tester");
+            ImGui::InputText("Input String (e.g. aba)", ui_test_string, IM_ARRAYSIZE(ui_test_string));
+
+            if (ImGui::Button("Simulate Input")) {
+                simulation_result = "";
+                simulation_path = "";
+                string curr_state = string(ui_initial_state) + "-";
+
+                if (moore_outputs.count(curr_state) == 0) {
+                    simulation_result = "Error: Machine not initialized.";
+                } else {
+                    simulation_result = moore_outputs[curr_state];
+                    simulation_path = curr_state;
+
+                    for (char c : string(ui_test_string)) {
+                        string sym(1, c);
+                        if (moore_transitions[curr_state].count(sym)) {
+                            curr_state = moore_transitions[curr_state][sym];
+                            simulation_result += moore_outputs[curr_state];
+                            simulation_path += " -> " + curr_state;
+                        } else {
+                            simulation_result += " [HALT: Unmapped transition '" + sym + "']";
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (!simulation_result.empty()) {
+                ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.3f, 1.0f), "Output String: %s", simulation_result.c_str());
+                ImGui::TextWrapped("State Path: %s", simulation_path.c_str());
             }
         }
         ImGui::End();
@@ -253,8 +283,8 @@ int main() {
         // --- WINDOW 3: Node Graph Visualizer UI ---
         ImGui::Begin("State Visualizer");
 
-        if (ImGui::Button("Force Align Geometric Layout")) {
-            trigger_polygon_layout = true;
+        if (ImGui::Button("Force Align Hierarchical Layout")) {
+            trigger_auto_layout = true;
         }
 
         ImNodes::BeginNodeEditor();
@@ -267,50 +297,52 @@ int main() {
             state_to_id[pair.first] = node_id++;
         }
 
-        // Geometric Polygon Calculation Variables
-        int total_nodes = moore_outputs.size();
-        float radius = 250.0f + (total_nodes * 25.0f); // Expand radius as nodes increase
-        ImVec2 center(600.0f, 400.0f);
-        float angle_step = (total_nodes > 0) ? (2.0f * 3.14159265359f / total_nodes) : 0.0f;
-        int node_index = 0;
+        map<int, int> nodes_in_layer;
 
         for (auto const& pair : moore_outputs) {
             string state = pair.first;
             string out = pair.second;
             int current_node_id = state_to_id[state];
 
-            // Snap to polygonal coordinates if triggered
-            if (trigger_polygon_layout) {
-                float x = center.x + radius * cos(node_index * angle_step);
-                float y = center.y + radius * sin(node_index * angle_step);
+            if (trigger_auto_layout) {
+                int layer = state_layer[state];
+                float x = 50.0f + layer * 550.0f;
+                float y = 50.0f + nodes_in_layer[layer] * 350.0f;
                 ImNodes::SetNodeGridSpacePos(current_node_id, ImVec2(x, y));
+                nodes_in_layer[layer]++;
             }
 
             ImNodes::BeginNode(current_node_id);
+
             ImNodes::BeginNodeTitleBar();
             ImGui::Text("%s / %s", state.c_str(), out.c_str());
             ImNodes::EndNodeTitleBar();
 
             ImNodes::BeginInputAttribute(current_node_id << 8);
-            ImGui::Text("In");
+            ImGui::Dummy(ImVec2(1.0f, 20.0f));
             ImNodes::EndInputAttribute();
 
             int symbol_idx = 1;
             for (const string& sym : alphabet) {
                 if (moore_transitions[state].count(sym)) {
                     ImNodes::BeginOutputAttribute((current_node_id << 8) + symbol_idx);
-                    ImGui::Text("input (%s) ->", sym.c_str());
+
+                    ImGui::Dummy(ImVec2(120.0f, 0.0f));
+                    ImGui::SameLine();
+                    ImGui::Text("[ %s ] --->", sym.c_str());
+
                     ImNodes::EndOutputAttribute();
+                }
+
+                if (symbol_idx == 1 && alphabet.size() > 1) {
+                    ImGui::Dummy(ImVec2(0, 80.0f));
                 }
                 symbol_idx++;
             }
             ImNodes::EndNode();
-
-            node_index++;
         }
 
-        // Turn off the alignment flag after executing for one frame so users can still manually drag nodes
-        trigger_polygon_layout = false;
+        trigger_auto_layout = false;
 
         for (auto const& state_pair : moore_transitions) {
             string state = state_pair.first;
