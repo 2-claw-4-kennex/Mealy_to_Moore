@@ -1,0 +1,283 @@
+#include <bits/stdc++.h>
+#include <GLFW/glfw3.h>
+#include "imgui.h"
+#include "imgui_impl_glfw.h"
+#include "imgui_impl_opengl3.h"
+#include "imnodes.h"
+
+using namespace std;
+
+struct MealyTransition {
+    string next_state;
+    string output;
+};
+
+// Data structure for the dynamic UI table rows
+struct MealyTableRow {
+    char state[16] = "";
+    char next_a[16] = "", out_a[16] = "";
+    char next_b[16] = "", out_b[16] = "";
+};
+
+// Global variables for automata mapping
+map<string, map<string, MealyTransition>> mealy;
+vector<string> alphabet = {"a", "b"};
+map<string, map<string, string>> moore_transitions;
+map<string, string> moore_outputs;
+queue<string> bfs_queue;
+set<string> visited;
+
+// UI State Variables
+vector<MealyTableRow> ui_table_rows;
+char ui_initial_state[32] = "q0";
+bool algorithm_started = false;
+
+void processNextStep() {
+    if (bfs_queue.empty()) return;
+
+    string current_moore = bfs_queue.front();
+    bfs_queue.pop();
+
+    int separator_index = current_moore.find('_');
+    string current_mealy = current_moore.substr(0, separator_index);
+
+    for (string symbol : alphabet) {
+        if (mealy[current_mealy].count(symbol) == 0) continue;
+
+        MealyTransition trans = mealy[current_mealy][symbol];
+        string next_moore = trans.next_state + "_" + trans.output;
+
+        moore_transitions[current_moore][symbol] = next_moore;
+
+        if (visited.find(next_moore) == visited.end()) {
+            visited.insert(next_moore);
+            moore_outputs[next_moore] = trans.output;
+            bfs_queue.push(next_moore);
+        }
+    }
+}
+
+int main() {
+    // 1. Initialize hardware window
+    if (!glfwInit()) return -1;
+    GLFWwindow* window = glfwCreateWindow(1280, 720, "Mealy to Moore Simulator", NULL, NULL);
+    if (!window) { glfwTerminate(); return -1; }
+    glfwMakeContextCurrent(window);
+    glfwSwapInterval(1);
+
+    // 2. Initialize GUI context
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImNodes::CreateContext();
+    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplOpenGL3_Init("#version 130");
+
+    // 3. Scale everything twice the size (2.0x)
+    ImGui::GetIO().FontGlobalScale = 2.0f;
+    ImGui::GetStyle().ScaleAllSizes(2.0f);
+    ImNodes::GetStyle().NodePadding = ImVec2(24.0f, 24.0f);
+    ImGui::StyleColorsDark();
+
+    // Start with 4 empty rows by default
+    ui_table_rows.resize(4);
+
+    // 4. Main Application Render Loop
+    while (!glfwWindowShouldClose(window)) {
+        glfwPollEvents();
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+
+        // --- Tabular Control Panel UI ---
+        ImGui::Begin("Simulator Controls & Tables");
+
+        if (!algorithm_started) {
+            ImGui::Text("Mealy Transition Table");
+
+            if (ImGui::BeginTable("MealyInput", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+                ImGui::TableSetupColumn("State");
+                ImGui::TableSetupColumn("Input a");
+                ImGui::TableSetupColumn("Input b");
+                ImGui::TableHeadersRow();
+
+                for (size_t i = 0; i < ui_table_rows.size(); i++) {
+                    ImGui::TableNextRow();
+
+                    // Column 1: State
+                    ImGui::TableSetColumnIndex(0);
+                    ImGui::PushID(i * 10 + 0);
+                    ImGui::SetNextItemWidth(-FLT_MIN);
+                    ImGui::InputText("##state", ui_table_rows[i].state, 16);
+                    ImGui::PopID();
+
+                    // Column 2: Input a (Next, Out)
+                    ImGui::TableSetColumnIndex(1);
+                    ImGui::PushID(i * 10 + 1);
+                    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.4f);
+                    ImGui::InputText("##na", ui_table_rows[i].next_a, 16);
+                    ImGui::SameLine(); ImGui::Text(","); ImGui::SameLine();
+                    ImGui::SetNextItemWidth(-FLT_MIN);
+                    ImGui::InputText("##oa", ui_table_rows[i].out_a, 16);
+                    ImGui::PopID();
+
+                    // Column 3: Input b (Next, Out)
+                    ImGui::TableSetColumnIndex(2);
+                    ImGui::PushID(i * 10 + 2);
+                    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.4f);
+                    ImGui::InputText("##nb", ui_table_rows[i].next_b, 16);
+                    ImGui::SameLine(); ImGui::Text(","); ImGui::SameLine();
+                    ImGui::SetNextItemWidth(-FLT_MIN);
+                    ImGui::InputText("##ob", ui_table_rows[i].out_b, 16);
+                    ImGui::PopID();
+                }
+                ImGui::EndTable();
+            }
+
+            if (ImGui::Button("+ Add Row")) {
+                ui_table_rows.push_back(MealyTableRow());
+            }
+
+            ImGui::Separator();
+            ImGui::Text("Initial State:"); ImGui::SameLine();
+            ImGui::InputText("##init_state", ui_initial_state, IM_ARRAYSIZE(ui_initial_state));
+
+            if (ImGui::Button("Lock Input & Start Conversion")) {
+                mealy.clear();
+                for (auto& row : ui_table_rows) {
+                    if (strlen(row.state) > 0) {
+                        mealy[row.state]["a"] = {row.next_a, row.out_a};
+                        mealy[row.state]["b"] = {row.next_b, row.out_b};
+                    }
+                }
+                string init_moore = string(ui_initial_state) + "_-";
+                bfs_queue.push(init_moore);
+                visited.insert(init_moore);
+                moore_outputs[init_moore] = "-";
+                algorithm_started = true;
+            }
+        } else {
+            // Execution Controls
+            if (ImGui::Button("Execute Next Step")) {
+                processNextStep();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Reset Simulator")) {
+                mealy.clear(); moore_transitions.clear();
+                moore_outputs.clear(); visited.clear();
+                while(!bfs_queue.empty()) bfs_queue.pop();
+                algorithm_started = false;
+            }
+            ImGui::Text("Remaining states in queue: %d", (int)bfs_queue.size());
+
+            ImGui::Separator();
+
+            // Tabular Moore Output
+            ImGui::Text("Output Moore Machine");
+            if (ImGui::BeginTable("MooreOutput", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+                ImGui::TableSetupColumn("State");
+                ImGui::TableSetupColumn("a");
+                ImGui::TableSetupColumn("b");
+                ImGui::TableSetupColumn("output");
+                ImGui::TableHeadersRow();
+
+                for (const auto& pair : moore_outputs) {
+                    ImGui::TableNextRow();
+                    string state = pair.first;
+                    string out = pair.second;
+
+                    ImGui::TableSetColumnIndex(0);
+                    ImGui::Text("%s", state.c_str());
+
+                    ImGui::TableSetColumnIndex(1);
+                    if (moore_transitions[state].count("a")) ImGui::Text("%s", moore_transitions[state]["a"].c_str());
+                    else ImGui::Text("-");
+
+                    ImGui::TableSetColumnIndex(2);
+                    if (moore_transitions[state].count("b")) ImGui::Text("%s", moore_transitions[state]["b"].c_str());
+                    else ImGui::Text("-");
+
+                    ImGui::TableSetColumnIndex(3);
+                    ImGui::Text("%s", out.c_str());
+                }
+                ImGui::EndTable();
+            }
+        }
+        ImGui::End();
+
+        // --- Node Graph Visualizer UI ---
+        ImGui::Begin("State Visualizer");
+        ImNodes::BeginNodeEditor();
+
+        int node_id = 1;
+        int link_id = 1000;
+        map<string, int> state_to_id;
+
+        for (auto const& pair : moore_outputs) {
+            state_to_id[pair.first] = node_id++;
+        }
+
+        for (auto const& pair : moore_outputs) {
+            string state = pair.first;
+            string out = pair.second;
+            int current_node_id = state_to_id[state];
+
+            ImNodes::BeginNode(current_node_id);
+            ImNodes::BeginNodeTitleBar();
+            ImGui::Text("%s / %s", state.c_str(), out.c_str());
+            ImNodes::EndNodeTitleBar();
+
+            ImNodes::BeginInputAttribute(current_node_id << 8);
+            ImGui::Text("In");
+            ImNodes::EndInputAttribute();
+
+            int symbol_idx = 1;
+            for (const string& sym : alphabet) {
+                if (moore_transitions[state].count(sym)) {
+                    ImNodes::BeginOutputAttribute((current_node_id << 8) + symbol_idx);
+                    ImGui::Text("input (%s) ->", sym.c_str());
+                    ImNodes::EndOutputAttribute();
+                }
+                symbol_idx++;
+            }
+            ImNodes::EndNode();
+        }
+
+        for (auto const& state_pair : moore_transitions) {
+            string state = state_pair.first;
+            int current_node_id = state_to_id[state];
+
+            int symbol_idx = 1;
+            for (const string& sym : alphabet) {
+                if (state_pair.second.count(sym)) {
+                    string next_state = state_pair.second.at(sym);
+                    int next_node_id = state_to_id[next_state];
+                    ImNodes::Link(link_id++, (current_node_id << 8) + symbol_idx, (next_node_id << 8));
+                }
+                symbol_idx++;
+            }
+        }
+
+        ImNodes::EndNodeEditor();
+        ImGui::End();
+
+        // 5. Render frame to screen
+        ImGui::Render();
+        int display_w, display_h;
+        glfwGetFramebufferSize(window, &display_w, &display_h);
+        glViewport(0, 0, display_w, display_h);
+        glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+        glfwSwapBuffers(window);
+    }
+
+    // 6. Memory cleanup
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImNodes::DestroyContext();
+    ImGui::DestroyContext();
+    glfwDestroyWindow(window);
+    glfwTerminate();
+
+    return 0;
+}
