@@ -12,7 +12,6 @@ struct MealyTransition {
     string output;
 };
 
-// Data structure for the dynamic UI table rows
 struct MealyTableRow {
     char state[16] = "";
     char next_a[16] = "", out_a[16] = "";
@@ -62,6 +61,10 @@ int main() {
     if (!glfwInit()) return -1;
     GLFWwindow* window = glfwCreateWindow(1280, 720, "Mealy to Moore Simulator", NULL, NULL);
     if (!window) { glfwTerminate(); return -1; }
+
+    // Force Fullscreen / Maximized Window
+    glfwMaximizeWindow(window);
+
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1);
 
@@ -72,24 +75,40 @@ int main() {
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 130");
 
-    // 3. Scale everything twice the size (2.0x)
-    ImGui::GetIO().FontGlobalScale = 2.0f;
-    ImGui::GetStyle().ScaleAllSizes(2.0f);
+    // 3. Scale everything to 2.5x size
+    ImGui::GetIO().FontGlobalScale = 2.5f;
+    ImGui::GetStyle().ScaleAllSizes(2.5f);
     ImNodes::GetStyle().NodePadding = ImVec2(24.0f, 24.0f);
     ImGui::StyleColorsDark();
 
-    // Start with 4 empty rows by default
+    // 4. Hardcode the requested Mealy transition table
     ui_table_rows.resize(4);
 
-    // 4. Main Application Render Loop
+    strcpy(ui_table_rows[0].state, "q0");
+    strcpy(ui_table_rows[0].next_a, "q3"); strcpy(ui_table_rows[0].out_a, "0");
+    strcpy(ui_table_rows[0].next_b, "q1"); strcpy(ui_table_rows[0].out_b, "1");
+
+    strcpy(ui_table_rows[1].state, "q1");
+    strcpy(ui_table_rows[1].next_a, "q0"); strcpy(ui_table_rows[1].out_a, "1");
+    strcpy(ui_table_rows[1].next_b, "q3"); strcpy(ui_table_rows[1].out_b, "0");
+
+    strcpy(ui_table_rows[2].state, "q2");
+    strcpy(ui_table_rows[2].next_a, "q2"); strcpy(ui_table_rows[2].out_a, "1");
+    strcpy(ui_table_rows[2].next_b, "q2"); strcpy(ui_table_rows[2].out_b, "0");
+
+    strcpy(ui_table_rows[3].state, "q3");
+    strcpy(ui_table_rows[3].next_a, "q1"); strcpy(ui_table_rows[3].out_a, "0");
+    strcpy(ui_table_rows[3].next_b, "q0"); strcpy(ui_table_rows[3].out_b, "1");
+
+    // 5. Main Application Render Loop
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
-        // --- Tabular Control Panel UI ---
-        ImGui::Begin("Simulator Controls & Tables");
+        // --- WINDOW 1: Tabular Input & Controls ---
+        ImGui::Begin("Simulator Controls & Input");
 
         if (!algorithm_started) {
             ImGui::Text("Mealy Transition Table");
@@ -103,14 +122,12 @@ int main() {
                 for (size_t i = 0; i < ui_table_rows.size(); i++) {
                     ImGui::TableNextRow();
 
-                    // Column 1: State
                     ImGui::TableSetColumnIndex(0);
                     ImGui::PushID(i * 10 + 0);
                     ImGui::SetNextItemWidth(-FLT_MIN);
                     ImGui::InputText("##state", ui_table_rows[i].state, 16);
                     ImGui::PopID();
 
-                    // Column 2: Input a (Next, Out)
                     ImGui::TableSetColumnIndex(1);
                     ImGui::PushID(i * 10 + 1);
                     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.4f);
@@ -120,7 +137,6 @@ int main() {
                     ImGui::InputText("##oa", ui_table_rows[i].out_a, 16);
                     ImGui::PopID();
 
-                    // Column 3: Input b (Next, Out)
                     ImGui::TableSetColumnIndex(2);
                     ImGui::PushID(i * 10 + 2);
                     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.4f);
@@ -156,7 +172,6 @@ int main() {
                 algorithm_started = true;
             }
         } else {
-            // Execution Controls
             if (ImGui::Button("Execute Next Step")) {
                 processNextStep();
             }
@@ -168,12 +183,13 @@ int main() {
                 algorithm_started = false;
             }
             ImGui::Text("Remaining states in queue: %d", (int)bfs_queue.size());
+        }
+        ImGui::End();
 
-            ImGui::Separator();
-
-            // Tabular Moore Output
-            ImGui::Text("Output Moore Machine");
-            if (ImGui::BeginTable("MooreOutput", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+        // --- WINDOW 2: Dedicated Moore Output Table ---
+        ImGui::Begin("Output Moore Machine Table");
+        if (algorithm_started) {
+            if (ImGui::BeginTable("MooreOutput", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) {
                 ImGui::TableSetupColumn("State");
                 ImGui::TableSetupColumn("a");
                 ImGui::TableSetupColumn("b");
@@ -201,10 +217,12 @@ int main() {
                 }
                 ImGui::EndTable();
             }
+        } else {
+            ImGui::Text("Table will generate after starting conversion.");
         }
         ImGui::End();
 
-        // --- Node Graph Visualizer UI ---
+        // --- WINDOW 3: Node Graph Visualizer UI ---
         ImGui::Begin("State Visualizer");
         ImNodes::BeginNodeEditor();
 
@@ -260,7 +278,7 @@ int main() {
         ImNodes::EndNodeEditor();
         ImGui::End();
 
-        // 5. Render frame to screen
+        // 6. Render frame to screen
         ImGui::Render();
         int display_w, display_h;
         glfwGetFramebufferSize(window, &display_w, &display_h);
@@ -271,7 +289,7 @@ int main() {
         glfwSwapBuffers(window);
     }
 
-    // 6. Memory cleanup
+    // 7. Memory cleanup
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImNodes::DestroyContext();
