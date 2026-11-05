@@ -110,53 +110,63 @@ int main() {
         // --- WINDOW 1: Tabular Input & Controls ---
         ImGui::Begin("Simulator Controls & Input");
 
+        ImGui::Text("Mealy Transition Table");
+
+        // Lock the inputs visually if the conversion algorithm is running
+        if (algorithm_started) {
+            ImGui::BeginDisabled();
+        }
+
+        if (ImGui::BeginTable("MealyInput", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+            ImGui::TableSetupColumn("State");
+            ImGui::TableSetupColumn("Input a");
+            ImGui::TableSetupColumn("Input b");
+            ImGui::TableHeadersRow();
+
+            for (size_t i = 0; i < ui_table_rows.size(); i++) {
+                ImGui::TableNextRow();
+
+                ImGui::TableSetColumnIndex(0);
+                ImGui::PushID(i * 10 + 0);
+                ImGui::SetNextItemWidth(-FLT_MIN);
+                ImGui::InputText("##state", ui_table_rows[i].state, 16);
+                ImGui::PopID();
+
+                ImGui::TableSetColumnIndex(1);
+                ImGui::PushID(i * 10 + 1);
+                ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.4f);
+                ImGui::InputText("##na", ui_table_rows[i].next_a, 16);
+                ImGui::SameLine(); ImGui::Text(","); ImGui::SameLine();
+                ImGui::SetNextItemWidth(-FLT_MIN);
+                ImGui::InputText("##oa", ui_table_rows[i].out_a, 16);
+                ImGui::PopID();
+
+                ImGui::TableSetColumnIndex(2);
+                ImGui::PushID(i * 10 + 2);
+                ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.4f);
+                ImGui::InputText("##nb", ui_table_rows[i].next_b, 16);
+                ImGui::SameLine(); ImGui::Text(","); ImGui::SameLine();
+                ImGui::SetNextItemWidth(-FLT_MIN);
+                ImGui::InputText("##ob", ui_table_rows[i].out_b, 16);
+                ImGui::PopID();
+            }
+            ImGui::EndTable();
+        }
+
+        if (ImGui::Button("+ Add Row")) {
+            ui_table_rows.push_back(MealyTableRow());
+        }
+
+        ImGui::Separator();
+        ImGui::Text("Initial State:"); ImGui::SameLine();
+        ImGui::InputText("##init_state", ui_initial_state, IM_ARRAYSIZE(ui_initial_state));
+
+        if (algorithm_started) {
+            ImGui::EndDisabled();
+        }
+
+        // Display conditional action buttons
         if (!algorithm_started) {
-            ImGui::Text("Mealy Transition Table");
-
-            if (ImGui::BeginTable("MealyInput", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
-                ImGui::TableSetupColumn("State");
-                ImGui::TableSetupColumn("Input a");
-                ImGui::TableSetupColumn("Input b");
-                ImGui::TableHeadersRow();
-
-                for (size_t i = 0; i < ui_table_rows.size(); i++) {
-                    ImGui::TableNextRow();
-
-                    ImGui::TableSetColumnIndex(0);
-                    ImGui::PushID(i * 10 + 0);
-                    ImGui::SetNextItemWidth(-FLT_MIN);
-                    ImGui::InputText("##state", ui_table_rows[i].state, 16);
-                    ImGui::PopID();
-
-                    ImGui::TableSetColumnIndex(1);
-                    ImGui::PushID(i * 10 + 1);
-                    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.4f);
-                    ImGui::InputText("##na", ui_table_rows[i].next_a, 16);
-                    ImGui::SameLine(); ImGui::Text(","); ImGui::SameLine();
-                    ImGui::SetNextItemWidth(-FLT_MIN);
-                    ImGui::InputText("##oa", ui_table_rows[i].out_a, 16);
-                    ImGui::PopID();
-
-                    ImGui::TableSetColumnIndex(2);
-                    ImGui::PushID(i * 10 + 2);
-                    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.4f);
-                    ImGui::InputText("##nb", ui_table_rows[i].next_b, 16);
-                    ImGui::SameLine(); ImGui::Text(","); ImGui::SameLine();
-                    ImGui::SetNextItemWidth(-FLT_MIN);
-                    ImGui::InputText("##ob", ui_table_rows[i].out_b, 16);
-                    ImGui::PopID();
-                }
-                ImGui::EndTable();
-            }
-
-            if (ImGui::Button("+ Add Row")) {
-                ui_table_rows.push_back(MealyTableRow());
-            }
-
-            ImGui::Separator();
-            ImGui::Text("Initial State:"); ImGui::SameLine();
-            ImGui::InputText("##init_state", ui_initial_state, IM_ARRAYSIZE(ui_initial_state));
-
             if (ImGui::Button("Lock Input & Start Conversion")) {
                 mealy.clear();
                 for (auto& row : ui_table_rows) {
@@ -182,7 +192,20 @@ int main() {
                 while(!bfs_queue.empty()) bfs_queue.pop();
                 algorithm_started = false;
             }
-            ImGui::Text("Remaining states in queue: %d", (int)bfs_queue.size());
+
+            // List the specific items currently in the queue
+            ImGui::Separator();
+            ImGui::Text("Pending states in BFS Queue (%d):", (int)bfs_queue.size());
+
+            if (bfs_queue.empty()) {
+                ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "Queue is empty. Conversion complete.");
+            } else {
+                queue<string> temp_q = bfs_queue;
+                while (!temp_q.empty()) {
+                    ImGui::BulletText("%s", temp_q.front().c_str());
+                    temp_q.pop();
+                }
+            }
         }
         ImGui::End();
 
