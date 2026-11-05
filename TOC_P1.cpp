@@ -1,4 +1,5 @@
 #include <bits/stdc++.h>
+#include <cmath>
 #include <GLFW/glfw3.h>
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
@@ -30,6 +31,7 @@ set<string> visited;
 vector<MealyTableRow> ui_table_rows;
 char ui_initial_state[32] = "q0";
 bool algorithm_started = false;
+bool trigger_polygon_layout = false;
 
 void processNextStep() {
     if (bfs_queue.empty()) return;
@@ -37,14 +39,16 @@ void processNextStep() {
     string current_moore = bfs_queue.front();
     bfs_queue.pop();
 
-    int separator_index = current_moore.find('_');
-    string current_mealy = current_moore.substr(0, separator_index);
+    // Extract the original state by removing the last character (the output symbol)
+    string current_mealy = current_moore.substr(0, current_moore.length() - 1);
 
     for (string symbol : alphabet) {
         if (mealy[current_mealy].count(symbol) == 0) continue;
 
         MealyTransition trans = mealy[current_mealy][symbol];
-        string next_moore = trans.next_state + "_" + trans.output;
+
+        // Concatenate without the underscore (e.g., "q1" + "0" = "q10")
+        string next_moore = trans.next_state + trans.output;
 
         moore_transitions[current_moore][symbol] = next_moore;
 
@@ -75,8 +79,10 @@ int main() {
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 130");
 
-    // 3. Scale everything to 2.5x size
-    ImGui::GetIO().FontGlobalScale = 2.5f;
+    // 3. High-Resolution Font Loading & Geometry Scaling
+    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\segoeui.ttf", 38.0f);
+
     ImGui::GetStyle().ScaleAllSizes(2.5f);
     ImNodes::GetStyle().NodePadding = ImVec2(24.0f, 24.0f);
     ImGui::StyleColorsDark();
@@ -112,7 +118,6 @@ int main() {
 
         ImGui::Text("Mealy Transition Table");
 
-        // Lock the inputs visually if the conversion algorithm is running
         if (algorithm_started) {
             ImGui::BeginDisabled();
         }
@@ -165,7 +170,6 @@ int main() {
             ImGui::EndDisabled();
         }
 
-        // Display conditional action buttons
         if (!algorithm_started) {
             if (ImGui::Button("Lock Input & Start Conversion")) {
                 mealy.clear();
@@ -175,7 +179,8 @@ int main() {
                         mealy[row.state]["b"] = {row.next_b, row.out_b};
                     }
                 }
-                string init_moore = string(ui_initial_state) + "_-";
+                // Initialize start state with a dash directly connected (e.g., "q0-")
+                string init_moore = string(ui_initial_state) + "-";
                 bfs_queue.push(init_moore);
                 visited.insert(init_moore);
                 moore_outputs[init_moore] = "-";
@@ -184,6 +189,7 @@ int main() {
         } else {
             if (ImGui::Button("Execute Next Step")) {
                 processNextStep();
+                trigger_polygon_layout = true; // Auto-align dynamically as new nodes spawn
             }
             ImGui::SameLine();
             if (ImGui::Button("Reset Simulator")) {
@@ -193,7 +199,6 @@ int main() {
                 algorithm_started = false;
             }
 
-            // List the specific items currently in the queue
             ImGui::Separator();
             ImGui::Text("Pending states in BFS Queue (%d):", (int)bfs_queue.size());
 
@@ -247,6 +252,11 @@ int main() {
 
         // --- WINDOW 3: Node Graph Visualizer UI ---
         ImGui::Begin("State Visualizer");
+
+        if (ImGui::Button("Force Align Geometric Layout")) {
+            trigger_polygon_layout = true;
+        }
+
         ImNodes::BeginNodeEditor();
 
         int node_id = 1;
@@ -257,10 +267,24 @@ int main() {
             state_to_id[pair.first] = node_id++;
         }
 
+        // Geometric Polygon Calculation Variables
+        int total_nodes = moore_outputs.size();
+        float radius = 250.0f + (total_nodes * 25.0f); // Expand radius as nodes increase
+        ImVec2 center(600.0f, 400.0f);
+        float angle_step = (total_nodes > 0) ? (2.0f * 3.14159265359f / total_nodes) : 0.0f;
+        int node_index = 0;
+
         for (auto const& pair : moore_outputs) {
             string state = pair.first;
             string out = pair.second;
             int current_node_id = state_to_id[state];
+
+            // Snap to polygonal coordinates if triggered
+            if (trigger_polygon_layout) {
+                float x = center.x + radius * cos(node_index * angle_step);
+                float y = center.y + radius * sin(node_index * angle_step);
+                ImNodes::SetNodeGridSpacePos(current_node_id, ImVec2(x, y));
+            }
 
             ImNodes::BeginNode(current_node_id);
             ImNodes::BeginNodeTitleBar();
@@ -281,7 +305,12 @@ int main() {
                 symbol_idx++;
             }
             ImNodes::EndNode();
+
+            node_index++;
         }
+
+        // Turn off the alignment flag after executing for one frame so users can still manually drag nodes
+        trigger_polygon_layout = false;
 
         for (auto const& state_pair : moore_transitions) {
             string state = state_pair.first;
