@@ -19,7 +19,8 @@ file(GLOB GUI_SOURCES
 )
 
 # 4. Compile the target executable (TOC_P1.cpp is now the sole entry point)
-add_executable(TOC_P1 TOC_P1.cpp ${GUI_SOURCES})
+add_executable(TOC_P1 TOC_P1.cpp ${GUI_SOURCES}
+        DSA1.cpp)
 
 # 5. Provide the compiler with the include directories for header resolution
 target_include_directories(TOC_P1 PRIVATE
