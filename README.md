@@ -1,21 +1,4 @@
-﻿# Mealy-to-Moore Machine Converter & Simulator
-
-An interactive, hardware-accelerated **Mealy-to-Moore Finite State Transducer (FST)** converter and string simulator written in **C++17**, **Dear ImGui**, and **OpenGL 3.0**, cross-compiled to **WebAssembly (WebGL2)** for browser execution.
-
-> **Live Web App:** `https://2-claw-4-kennex.github.io/<your-repo-name>/`
-
----
-
-## Features
-* **Dynamic Input Alphabet:** Supports custom 2-symbol alphabets (`{0, 1}`, `{a, b}`, etc.) with one-click presets.
-* **Cardinality-Based State Splitting:** Splits a Mealy state only when it receives conflicting incoming outputs, preventing redundant state duplication while preserving disconnected components.
-* **Step-by-Step FIFO Wiring:** Inspect the pending state queue and wire transitions one state at a time or all at once.
-* **Custom 2D Vector Graph Canvas:** Built directly on `ImDrawList` with cursor-anchored zoom (`20%–300%`), drag-to-pan, draggable circular `State / Output` nodes, quadratic Bézier curves for bidirectional edges, and outward cubic Bézier self-loops.
-* **Dual-Trace String Equivalence Tester:** Executes any test string simultaneously on both the original Mealy machine and the converted Moore machine, highlighting the traversed path in green.
-
----
-
-## User Manual: How to Convert a Mealy Machine
+# User Manual: How to Convert a Mealy Machine
 
 ### Step 1: Read the Source Mealy Machine
 Consider the following Mealy machine with states `{A, B, C}`, input alphabet `{0, 1}`, output alphabet `{a, b}`, and initial state `A`:
