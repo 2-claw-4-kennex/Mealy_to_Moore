@@ -14,6 +14,9 @@
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
+static double getDPR()     { return EM_ASM_DOUBLE({ return window.devicePixelRatio || 1.0; }); }
+static int    getCanvasW() { return EM_ASM_INT({ return Math.floor(window.innerWidth  * (window.devicePixelRatio || 1.0)); }); }
+static int    getCanvasH() { return EM_ASM_INT({ return Math.floor(window.innerHeight * (window.devicePixelRatio || 1.0)); }); }
 #endif
 
 using namespace std;
@@ -582,6 +585,16 @@ void drawStateCanvas() {
 }
 
 void mainLoopFrame() {
+#ifdef __EMSCRIPTEN__
+    static int last_w = 0, last_h = 0;
+    int target_w = getCanvasW(), target_h = getCanvasH();
+    if (target_w > 0 && target_h > 0 && (target_w != last_w || target_h != last_h)) {
+        glfwSetWindowSize(g_window, target_w, target_h);
+        last_w = target_w;
+        last_h = target_h;
+    }
+#endif
+
     glfwPollEvents();
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
@@ -755,10 +768,12 @@ int main() {
     if (!glfwInit()) return -1;
 
 #ifdef __EMSCRIPTEN__
+    float dpr = (float)getDPR();
     const char* glsl_version = "#version 300 es";
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
-    g_window = glfwCreateWindow(1440, 820, "Mealy to Moore Simulator", NULL, NULL);
+    glfwWindowHint(GLFW_SAMPLES, 4);
+    g_window = glfwCreateWindow(getCanvasW(), getCanvasH(), "Mealy to Moore Simulator", NULL, NULL);
 #else
     const char* glsl_version = "#version 130";
     g_window = glfwCreateWindow(1280, 720, "Mealy to Moore Simulator", NULL, NULL);
@@ -778,27 +793,28 @@ int main() {
 
     ImGuiIO& io = ImGui::GetIO();
 #ifdef __EMSCRIPTEN__
-    if (!io.Fonts->AddFontFromFileTTF("fonts/segoeui.ttf", 22.0f)) io.Fonts->AddFontDefault();
+    if (!io.Fonts->AddFontFromFileTTF("fonts/segoeui.ttf", 20.0f * dpr)) io.Fonts->AddFontDefault();
+    ImGui::GetStyle().ScaleAllSizes(1.15f * dpr);
 #else
     if (!io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\segoeui.ttf", 24.0f)) io.Fonts->AddFontDefault();
-#endif
     ImGui::GetStyle().ScaleAllSizes(1.35f);
+#endif
     ImGui::StyleColorsDark();
 
     loadBinaryPreset();
 
 #ifdef __EMSCRIPTEN__
-    emscripten_set_main_loop(mainLoopFrame, 0, true);
+    emscripten_set_main_loop(mainLoopFrame, 0, false);
+    return 0;
 #else
     while (!glfwWindowShouldClose(g_window)) {
         mainLoopFrame();
     }
-#endif
-
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
     glfwDestroyWindow(g_window);
     glfwTerminate();
     return 0;
+#endif
 }
